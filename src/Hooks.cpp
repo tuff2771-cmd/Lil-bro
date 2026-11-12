@@ -55,16 +55,19 @@ class $modify(CheatGJ, GJBaseGameLayer) {
         int s = std::max(0, (int)(px / 100.f));
         for (int k = s; k <= s + 1; k++) {
             if (k < 0 || k >= (int)m_sections.size()) continue;
-            auto* v = m_sections[k];
-            if (!v) continue;
-            for (auto* o : *v) {
-                if (!o || o->m_objectType != GameObjectType::Solid) continue;
-                auto r = o->getObjectRect();
-                if (r.getMaxX() < px || r.getMinX() > px + 120.f) continue;
-                if (r.getMaxY() <= py + 2.f) {
-                    if (r.getMaxY() > lo) { lo = r.getMaxY(); gotLo = true; }
-                } else if (r.getMinY() >= py - 2.f) {
-                    if (r.getMinY() < hi) { hi = r.getMinY(); gotHi = true; }
+            auto* col = m_sections[k];
+            if (!col) continue;
+            for (auto* cell : *col) {
+                if (!cell) continue;
+                for (auto* o : *cell) {
+                    if (!o || o->m_objectType != GameObjectType::Solid) continue;
+                    auto r = o->getObjectRect();
+                    if (r.getMaxX() < px || r.getMinX() > px + 120.f) continue;
+                    if (r.getMaxY() <= py + 2.f) {
+                        if (r.getMaxY() > lo) { lo = r.getMaxY(); gotLo = true; }
+                    } else if (r.getMinY() >= py - 2.f) {
+                        if (r.getMinY() < hi) { hi = r.getMinY(); gotHi = true; }
+                    }
                 }
             }
         }
