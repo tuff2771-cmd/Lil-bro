@@ -22,8 +22,8 @@ static int touching(PlayerObject* p, GameObjectType t) {
 // "swift click" = press + release in the same tick
 static void swift(GJBaseGameLayer* l, bool p1, int n = 1) {
     for (int i = 0; i < n; i++) {
-        l->pushButton(1, p1);
-        l->releaseButton(1, p1);
+        l->handleButton(true, 1, p1);
+        l->handleButton(false, 1, p1);
     }
 }
 
@@ -45,15 +45,14 @@ class $modify(CheatGJ, GJBaseGameLayer) {
         bool& h = m_fields->held[p1 ? 0 : 1];
         if (h == want) return;
         h = want;
-        if (want) this->pushButton(1, p1);
-        else this->releaseButton(1, p1);
+        this->handleButton(want, 1, p1);
     }
 
     float gapMid(PlayerObject* p, float fallback) {
         float px = p->getPositionX(), py = p->getPositionY();
         float lo = -1e9f, hi = 1e9f;
         bool gotLo = false, gotHi = false;
-        int s = this->sectionForPos(px);
+        int s = std::max(0, (int)(px / 100.f));
         for (int k = s; k <= s + 1; k++) {
             if (k < 0 || k >= (int)m_sections.size()) continue;
             auto* v = m_sections[k];
@@ -155,9 +154,9 @@ class $modify(CheatGJ, GJBaseGameLayer) {
         }
     }
 
-    void processCommands(float dt) {
+    void processCommands(float dt, bool isHalfTick, bool isLastTick) {
         if (this->active()) this->cheats();
-        GJBaseGameLayer::processCommands(dt);
+        GJBaseGameLayer::processCommands(dt, isHalfTick, isLastTick);
     }
 
     // 2P control link
