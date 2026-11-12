@@ -49,9 +49,10 @@ inline std::vector<Feature>& features() {
     return f;
 }
 
-class ConfigPopup : public Popup<Feature*> {
+class ConfigPopup : public Popup {
 protected:
-    bool setup(Feature* ft) override {
+    bool init(Feature* ft) {
+        if (!Popup::init(300.f, 60.f + 28.f * ft->fields.size())) return false;
         m_bgSprite->setColor({0, 0, 0});
         this->setTitle(ft->name, "bigFont.fnt", .5f);
         auto sz = m_mainLayer->getContentSize();
@@ -97,9 +98,9 @@ protected:
                 in->setString(isInt ? fmt::format("{}", *(int*)f->ptr) : fmt::format("{}", *(float*)f->ptr));
                 in->setCallback([f, isInt](std::string const& s) {
                     if (isInt) {
-                        if (auto r = numFromString<int>(s)) *(int*)f->ptr = r.unwrap();
+                        if (auto r = geode::utils::numFromString<int>(s)) *(int*)f->ptr = r.unwrap();
                     } else {
-                        if (auto r = numFromString<float>(s)) *(float*)f->ptr = r.unwrap();
+                        if (auto r = geode::utils::numFromString<float>(s)) *(float*)f->ptr = r.unwrap();
                     }
                     cfg.save();
                 });
@@ -114,7 +115,7 @@ protected:
 public:
     static ConfigPopup* create(Feature* ft) {
         auto r = new ConfigPopup();
-        if (r->initAnchored(300.f, 60.f + 28.f * ft->fields.size(), ft)) {
+        if (r->init(ft)) {
             r->autorelease();
             return r;
         }
@@ -123,7 +124,7 @@ public:
     }
 };
 
-class CheatPopup : public Popup<> {
+class CheatPopup : public Popup {
 protected:
     CCNode* makeRow(Feature* f, float w) {
         auto row = CCNode::create();
@@ -159,7 +160,8 @@ protected:
         return row;
     }
 
-    bool setup() override {
+    bool init() {
+        if (!Popup::init(360.f, 270.f)) return false;
         m_bgSprite->setColor({0, 0, 0});
         this->setTitle("Cheat Menu", "bigFont.fnt", .7f);
         auto sz = m_mainLayer->getContentSize();
@@ -188,7 +190,7 @@ protected:
 public:
     static CheatPopup* create() {
         auto r = new CheatPopup();
-        if (r->initAnchored(360.f, 270.f)) {
+        if (r->init()) {
             r->autorelease();
             return r;
         }
