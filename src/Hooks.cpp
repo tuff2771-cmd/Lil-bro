@@ -3,9 +3,15 @@
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PlayerObject.hpp>
 #include <Geode/modify/RingObject.hpp>
+#include <set>
 #include "Settings.hpp"
 
 using namespace geode::prelude;
+
+// true while the mod itself is sending clicks (so they are not treated as player presses)
+static bool g_injecting = false;
+// pads already clicked this attempt
+static std::set<std::pair<GameObject*, bool>> g_firedPads;
 
 static bool pick(int mode, bool p1) {
     return mode == 0 || (mode == 1 && p1) || (mode == 2 && !p1);
@@ -20,11 +26,12 @@ static int touching(PlayerObject* p, GameObjectType t) {
 }
 
 // "swift click" = press + release in the same tick
-static void swift(GJBaseGameLayer* l, bool p1, int n = 1) {
-    for (int i = 0; i < n; i++) {
-        l->handleButton(true, 1, p1);
-        l->handleButton(false, 1, p1);
-    }
+static void swiftPair(GJBaseGameLayer* l, bool p1) {
+    bool old = g_injecting;
+    g_injecting = true;
+    l->handleButton(true, 1, p1);
+    l->handleButton(false, 1, p1);
+    g_injecting = old;
 }
 
 class $modify(CheatGJ, GJBaseGameLayer) {
@@ -45,7 +52,10 @@ class $modify(CheatGJ, GJBaseGameLayer) {
         bool& h = m_fields->held[p1 ? 0 : 1];
         if (h == want) return;
         h = want;
-        this->handleButton(want, 1, p1);
+        bool old = g_injecting;
+        g_injecting = true;
+        static_cast<GJBaseGameLayer*>(this)->handleButton(want, 1, p1);
+        g_injecting = old;
     }
 
     float gapMid(PlayerObject* p, float fallback) {
@@ -74,6 +84,44 @@ class $modify(CheatGJ, GJBaseGameLayer) {
         return (gotLo && gotHi) ? (lo + hi) * .5f : fallback;
     }
 
+    // how many swift clicks to send when the player presses (0 = leave the press alone)
+    int swiftClicks(bool p1) {
+        PlayerObject* p = p1 ? m_player1 : m_player2;
+        if (!p || (!p1 && !m_gameState.m_isDualMode)) return 0;
+        float vy = p->m_yVelocity * (p->m_isUpsideDown ? -1.f : 1.f);
+        int orbs = 0;
+
+        // green dash orbs
+        if (cfg.greenDash && pick(cfg.greenPlayer, p1))
+            orbs += touching(p, GameObjectType::DashRing);
+
+        // black orbs / easy black orb ufo
+        if (cfg.blackOrb || cfg.easyBlackUfo) {
+            bool skip = cfg.easyBlackUfo && p->m_isBird && vy < 0;
+            if (!skip) orbs += touching(p, GameObjectType::DropRing);
+        }
+
+        // 1 orb = 2 clicks in one tick, 2 orbs = 4, 3 orbs = 6 ...
+        if (orbs > 0) return std::min(orbs, 20) * 2;
+
+        // blue orb option (wave gap spam): wait for the press, release in the same tick
+        bool wgOn = p1 ? cfg.wgP1On : cfg.wgP2On;
+        bool blue = p1 ? cfg.wgP1Blue : cfg.wgP2Blue;
+        if (cfg.waveGap && wgOn && blue && p->m_isDart && touching(p, GameObjectType::GravityRing) > 0)
+            return 1;
+
+        // auto swift: the press is released in the same tick
+        if (cfg.autoSwift) return 1;
+        return 0;
+    }
+
+    // sends one event to the game (+ mirrors it to the other player if 2P link is on)
+    void emit(bool down, bool p1) {
+        GJBaseGameLayer::handleButton(down, 1, p1);
+        if (cfg.link2p && ((cfg.linkDrive == 0) == p1))
+            GJBaseGameLayer::handleButton(cfg.linkMode == 0 ? down : !down, 1, !p1);
+    }
+
     void cheats() {
         int tick = ++m_fields->tick;
         for (int i = 0; i < 2; i++) {
@@ -81,19 +129,6 @@ class $modify(CheatGJ, GJBaseGameLayer) {
             PlayerObject* p = p1 ? m_player1 : m_player2;
             if (!p || (!p1 && !m_gameState.m_isDualMode)) continue;
             float vy = p->m_yVelocity * (p->m_isUpsideDown ? -1.f : 1.f);
-
-            // green dash orbs (more orbs = more clicks)
-            if (cfg.greenDash && pick(cfg.greenPlayer, p1)) {
-                int n = touching(p, GameObjectType::DashRing);
-                if (n) swift(this, p1, std::min(n, 6));
-            }
-
-            // black orbs / easy black orb ufo
-            if (cfg.blackOrb || cfg.easyBlackUfo) {
-                int n = touching(p, GameObjectType::DropRing);
-                bool skip = cfg.easyBlackUfo && p->m_isBird && vy < 0;
-                if (n && !skip) swift(this, p1);
-            }
 
             // maintain gravity
             if (cfg.maintainGrav && pick(cfg.maintainPlayer, p1)) {
@@ -118,7 +153,7 @@ class $modify(CheatGJ, GJBaseGameLayer) {
             if (cfg.straightUfo && p->m_isBird && pick(cfg.ufoPlayer, p1)) {
                 float err = cfg.ufoY - p->getPositionY();
                 if (p->m_isUpsideDown) err = -err;
-                if (err > cfg.ufoThr) swift(this, p1);
+                if (err > cfg.ufoThr) swiftPair(this, p1);
             }
 
             // autoclickers
@@ -128,20 +163,15 @@ class $modify(CheatGJ, GJBaseGameLayer) {
                 int hold = std::clamp(p1 ? cfg.acP1Hold : cfg.acP2Hold, 1, every);
                 bool sw = p1 ? cfg.acP1Swift : cfg.acP2Swift;
                 int c = tick % every;
-                if (sw) { if (c == 0) swift(this, p1); }
+                if (sw) { if (c == 0) swiftPair(this, p1); }
                 else setHold(p1, c < hold);
             }
-
-            // auto swift
-            if (cfg.autoSwift) swift(this, p1);
 
             // moving wave gap spam
             bool wgOn = p1 ? cfg.wgP1On : cfg.wgP2On;
             if (cfg.waveGap && wgOn && p->m_isDart) {
                 float thr = p1 ? cfg.wgP1Thr : cfg.wgP2Thr;
                 float center = p1 ? cfg.wgP1Center : cfg.wgP2Center;
-                bool blue = p1 ? cfg.wgP1Blue : cfg.wgP2Blue;
-                if (blue && touching(p, GameObjectType::GravityRing)) swift(this, p1);
 
                 float mid = this->gapMid(p, center);
                 float y = p->getPositionY();
@@ -162,40 +192,58 @@ class $modify(CheatGJ, GJBaseGameLayer) {
         GJBaseGameLayer::processCommands(dt, isHalfTick, isLastTick);
     }
 
-    // 2P control link
+    // every press/release goes through here
     void handleButton(bool down, int button, bool isPlayer1) {
-        GJBaseGameLayer::handleButton(down, button, isPlayer1);
-        static bool busy = false;
-        if (busy || !cfg.link2p || !this->active()) return;
-        bool driveP1 = cfg.linkDrive == 0;
-        if (isPlayer1 != driveP1) return;
-        busy = true;
-        GJBaseGameLayer::handleButton(cfg.linkMode == 0 ? down : !down, button, !isPlayer1);
-        busy = false;
+        if (button != 1 || !this->active()) {
+            GJBaseGameLayer::handleButton(down, button, isPlayer1);
+            return;
+        }
+
+        // real player press: add swift clicks if needed
+        if (!g_injecting && down) {
+            int clicks = this->swiftClicks(isPlayer1);
+            if (clicks > 0) {
+                for (int i = 0; i < clicks; i++) {
+                    this->emit(true, isPlayer1);
+                    this->emit(false, isPlayer1);
+                }
+                return;
+            }
+        }
+
+        this->emit(down, isPlayer1);
     }
 };
 
-// pads
+// pads: swift click once per pad per attempt
 class $modify(CheatPlayer, PlayerObject) {
     void collidedWithObject(float dt, GameObject* obj, cocos2d::CCRect rect, bool b) {
         PlayerObject::collidedWithObject(dt, obj, rect, b);
+        if (!obj || (!cfg.jumpPads && !cfg.gravPads)) return;
         auto pl = PlayLayer::get();
-        if (!pl || !obj || !pl->m_player1) return;
+        if (!pl || !pl->m_player1) return;
         bool p1 = this == pl->m_player1;
         if (!p1 && this != pl->m_player2) return;
         auto t = obj->m_objectType;
         bool jump = t == GameObjectType::YellowJumpPad || t == GameObjectType::PinkJumpPad || t == GameObjectType::RedJumpPad;
-        if ((cfg.jumpPads && jump) || (cfg.gravPads && t == GameObjectType::GravityPad))
-            swift(pl, p1);
+        bool grav = t == GameObjectType::GravityPad;
+        if (!((cfg.jumpPads && jump) || (cfg.gravPads && grav))) return;
+        if (!g_firedPads.insert({obj, p1}).second) return;
+        swiftPair(pl, p1);
     }
 };
 
-// noclip
+// noclip + reset pad memory on every attempt
 class $modify(CheatPlay, PlayLayer) {
     void destroyPlayer(PlayerObject* player, GameObject* obj) {
         if (obj != m_anticheatSpike && cfg.noclip && pick(cfg.noclipPlayer, player == m_player1))
             return;
         PlayLayer::destroyPlayer(player, obj);
+    }
+
+    void resetLevel() {
+        g_firedPads.clear();
+        PlayLayer::resetLevel();
     }
 };
 
