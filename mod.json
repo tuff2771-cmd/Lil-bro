@@ -1,13 +1,13 @@
 {
-  "geode": "5.11.2",
+  "geode": "6.0.0",
   "gd": {
-    "win": "2.2081",
-    "android": "2.2081"
+    "win": "2.2091",
+    "android": "2.2091"
   },
   "id": "helloworld1246.utils",
-  "name": "helloworld1246's cool utils",
+  "name": "Cheat Menu",
   "version": "v1.0.0",
   "developer": "helloworld1246",
-  "description": "idk cool utils made by helloworld1246 there might be bugs bc its the first ver of mod.",
+  "description": "Cheat menu with a button in the pause menu.",
   "tags": ["gameplay", "utility"]
 }
