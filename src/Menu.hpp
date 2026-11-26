@@ -53,7 +53,6 @@ class ConfigPopup : public Popup {
 protected:
     bool init(Feature* ft) {
         if (!Popup::init(300.f, 60.f + 28.f * ft->fields.size())) return false;
-        m_bgSprite->setColor({0, 0, 0});
         this->setTitle(ft->name, "bigFont.fnt", .5f);
         auto sz = m_mainLayer->getContentSize();
         float y = sz.height - 50.f;
@@ -162,7 +161,6 @@ protected:
 
     bool init() {
         if (!Popup::init(360.f, 270.f)) return false;
-        m_bgSprite->setColor({0, 0, 0});
         this->setTitle("Cheat Menu", "bigFont.fnt", .7f);
         auto sz = m_mainLayer->getContentSize();
 
